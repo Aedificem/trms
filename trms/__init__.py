@@ -52,6 +52,9 @@ class TRMS:
         print self.path, self.db_url, self.db_name
 
 
-if __name__ == "__main__":
+def main():
     get_opts()
     TRMS(PATH, DB_URL, DB_NAME)
+
+if __name__ == "__main__":
+    main()
