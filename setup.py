@@ -38,7 +38,7 @@ setup(
 
     entry_points={
         'console_scripts': [
-            'TRMS=TRMS:main',
+            'trms=trms:main',
         ],
     }
 )
