@@ -10,13 +10,13 @@ with open(path.join(here, 'DESCRIPTION.rst'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(
-    name='TRMS',
-    version='0.0.1a1',
+    name='trms',
+    version='0.0.6a1',
 
     description='Third-party Regis Moodle Scraper',
     long_description=long_description,
 
-    url='https://github.com/Apexal/TRMS',
+    url='https://github.com/Apexal/trms',
 
     author='Frank Matranga',
     author_email='thefrankmatranga@gmail.com',
