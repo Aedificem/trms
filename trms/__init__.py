@@ -9,6 +9,9 @@ import getopt
 import sys
 import json
 import os
+import requests
+from lxml import html
+from pymongo import MongoClient
 
 PATH = "./secrets.json"
 DB_URL = "localhost:27017"
@@ -52,14 +55,20 @@ class TRMS:
         self.db_url = DB_URL
         self.db_name = DB_NAME
 
-        self.secrets = None
+        # MongoDB
+        self.client = None
+        self.db = None
 
+        self.secrets = None
+        self.session = None
         self.running = True
 
         print self.path, self.db_url, self.db_name
         print " --- Initializing TRMS Alpha 1 --- \n"
         self.get_credentials()
+        self.login()
         self.connect()
+        print " --- DONE --- \n"
         self.run()
 
     def get_credentials(self):
@@ -69,12 +78,12 @@ class TRMS:
             self.path += "secrets.json"
         else:
             if not os.path.exists(self.path):
-                print "'"+self.path+"' does not exist."
+                print "'" + self.path + "' does not exist."
                 self.quit()
         try:
             self.secrets = json.loads(open(self.path).read())
         except (ValueError, IOError):
-            print "'"+self.path+"' is not a valid JSON file."
+            print "'" + self.path + "' is not a valid JSON file."
             self.quit()
 
         try:
@@ -84,10 +93,53 @@ class TRMS:
             print "Missing required credentials in JSON file."
             self.quit()
 
-        print "Using found credentials for "+self.secrets['regis_username']+"."
+        print "Using found credentials for " + self.secrets['regis_username'] + "."
+
+    def login(self):
+        creds = {'username': self.secrets['regis_username'], 'password': self.secrets['regis_password']}
+
+        url = "https://moodle.regis.org/login/index.php"
+        session = requests.Session()
+        r = session.post(url, data=creds)
+        parsed_body = html.fromstring(r.text)
+        title = parsed_body.xpath('//title/text()')[0]
+
+        # Check whether login was successful or not
+        if not "My home" in title:
+            print "Failed to login to Moodle, check your credentials in '" + self.path + "'."
+            self.quit()
+        print "Successfully logged into Moodle."
+
+        url = "https://intranet.regis.org/login/submit.cfm"
+        values = creds
+        r = session.post(url, data=values)
+        parsed_body = html.fromstring(r.text)
+        try:
+            title = parsed_body.xpath('//title/text()')[0]
+            if not "Intranet" in title:
+                print "Failed to login to the Intranet, check your credentials in '" + self.path + "'."
+                self.quit()
+        except:
+            print "Failed to login to the Intranet, check your credentials in '" + self.path + "'."
+            self.quit()
+
+        print "Successfully logged in to the Intranet."
+        self.session = session
 
     def connect(self):
-        pass
+        uri = "mongodb://" + self.db_url
+        try:
+            self.client = MongoClient(uri)
+            self.db = self.client[self.db_name]
+            try:
+                self.db.authenticate('ontrac', 'ontrac')
+            except Exception:
+                pass
+            self.db.students.count()
+        except Exception as e:
+            print "Failed to connect to '" + uri + "'"
+            self.quit()
+        print "Successfully connected to Database at '" + self.uri + "/" + self.db_name + "'"
 
     def run(self):
         while self.running:
@@ -95,6 +147,8 @@ class TRMS:
         self.quit()
 
     def quit(self):
+        if self.client is not None:
+            self.client.close()
         sys.exit(0)
 
 
@@ -103,4 +157,3 @@ def main():
     TRMS(PATH, DB_URL, DB_NAME)
 
 main()
-
