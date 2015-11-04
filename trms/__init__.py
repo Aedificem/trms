@@ -7,6 +7,8 @@
 
 import getopt
 import sys
+import json
+import os
 
 PATH = "./secrets.json"
 DB_URL = "localhost:27017"
@@ -49,13 +51,56 @@ class TRMS:
         self.path = PATH
         self.db_url = DB_URL
         self.db_name = DB_NAME
+
+        self.secrets = None
+
+        self.running = True
+
         print self.path, self.db_url, self.db_name
+        print " --- Initializing TRMS Alpha 1 --- \n"
+        self.get_credentials()
+        self.connect()
+        self.run()
 
+    def get_credentials(self):
+        if os.path.isdir(self.path):
+            if self.path[-1] != "/":
+                self.path += "/"
+            self.path += "secrets.json"
+        else:
+            if not os.path.exists(self.path):
+                print "'"+self.path+"' does not exist."
+                self.quit()
+        try:
+            self.secrets = json.loads(open(self.path).read())
+        except (ValueError, IOError):
+            print "'"+self.path+"' is not a valid JSON file."
+            self.quit()
 
-get_opts()
+        try:
+            self.secrets['regis_username']
+            self.secrets['regis_password']
+        except KeyError:
+            print "Missing required credentials in JSON file."
+            self.quit()
+
+        print "Using found credentials for "+self.secrets['regis_username']+"."
+
+    def connect(self):
+        pass
+
+    def run(self):
+        while self.running:
+            pass
+        self.quit()
+
+    def quit(self):
+        sys.exit(0)
+
 
 def main():
+    get_opts()
     TRMS(PATH, DB_URL, DB_NAME)
 
-if __name__ == "__main__":
-    main()
+main()
+
