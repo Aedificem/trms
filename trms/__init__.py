@@ -10,6 +10,7 @@ import sys
 import json
 import os
 import requests
+from time import sleep
 from lxml import html
 from pymongo import MongoClient
 
@@ -64,11 +65,11 @@ class TRMS:
         self.running = True
 
         print self.path, self.db_url, self.db_name
-        print " --- Initializing TRMS Alpha 1 --- \n"
+        print " --- Initializing TRMS Alpha 1 --- "
         self.get_credentials()
         self.login()
         self.connect()
-        print " --- DONE --- \n"
+        print ""
         self.run()
 
     def get_credentials(self):
@@ -119,7 +120,7 @@ class TRMS:
             if not "Intranet" in title:
                 print "Failed to login to the Intranet, check your credentials in '" + self.path + "'."
                 self.quit()
-        except:
+        except Exception:
             print "Failed to login to the Intranet, check your credentials in '" + self.path + "'."
             self.quit()
 
@@ -139,16 +140,25 @@ class TRMS:
         except Exception as e:
             print "Failed to connect to '" + uri + "'"
             self.quit()
-        print "Successfully connected to Database at '" + self.uri + "/" + self.db_name + "'"
+
+        sleep(1.5)  # nasty
+        print "Successfully connected to Database."
 
     def run(self):
-        while self.running:
-            pass
-        self.quit()
+        try:
+            while self.running:
+                command = raw_input("trms> ")
+                sleep(0.5)
+                print command
+            self.quit()
+        except KeyboardInterrupt:
+            print ""
+            self.quit()
 
     def quit(self):
         if self.client is not None:
             self.client.close()
+
         sys.exit(0)
 
 
