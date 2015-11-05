@@ -19,7 +19,11 @@ PATH = "./secrets.json"
 DB_URL = "localhost:27017"
 DB_NAME = "regis"
 
+
 def usage():
+    """
+    Prints the usage for the command line.
+    """
     print "usage: trms [--help] [-p <json_path>] [-u <db_url>] [-n <db_name>]"
 
 
@@ -53,17 +57,17 @@ for opt, arg in opts:
 # ---------------------------
 
 class TRMS:
-    def __init__(self, PATH, DB_URL, DB_NAME):
-        self.path = PATH
-        self.db_url = DB_URL
-        self.db_name = DB_NAME
+    def __init__(self, path, db_url, db_name):
+        self.path = path
+        self.db_url = db_url
+        self.db_name = db_name
 
         # MongoDB
         self.client = None
         self.db = None
 
-        self.secrets = None
-        self.session = None
+        self.secrets = None  # Intranet username/password from JSON file
+        self.session = None  # Requests session for persistent login
         self.running = True
 
         print self.path, self.db_url, self.db_name
@@ -75,20 +79,25 @@ class TRMS:
         self.run()
 
     def get_credentials(self):
-        if os.path.isdir(self.path):
-            if self.path[-1] != "/":
+        """
+        Validates passed path to JSON file and then tries to parse it for username/password
+        """
+        if os.path.isdir(self.path):  # Is it a directory?
+            if self.path[-1] != "/":  # If a dir, add a ending / if it doesn't already.
                 self.path += "/"
             self.path += "secrets.json"
-        else:
-            if not os.path.exists(self.path):
+            if not os.path.exists(self.path):  # Does the file not exist?
                 print "'" + self.path + "' does not exist."
                 self.quit()
+
+        # Try to open the file and parse it for JSON
         try:
             self.secrets = json.loads(open(self.path).read())
         except (ValueError, IOError):
             print "'" + self.path + "' is not a valid JSON file."
             self.quit()
 
+        # Make sure it contains the two needed keys
         try:
             self.secrets['regis_username']
             self.secrets['regis_password']
@@ -99,6 +108,10 @@ class TRMS:
         print "Using found credentials for " + self.secrets['regis_username'] + "."
 
     def login(self):
+        """
+        Attempts to login to Moodle and then the Intranet with the passed credentials
+        and keep a persistent session for later.
+        """
         creds = {'username': self.secrets['regis_username'], 'password': self.secrets['regis_password']}
 
         url = "https://moodle.regis.org/login/index.php"
@@ -117,6 +130,9 @@ class TRMS:
         values = creds
         r = session.post(url, data=values)
         parsed_body = html.fromstring(r.text)
+
+        # When logged in to the Intranet the page title is 'Regis Intranet' so we can use this to
+        # check for a successful login.
         try:
             title = parsed_body.xpath('//title/text()')[0]
             if not "Intranet" in title:
@@ -127,15 +143,18 @@ class TRMS:
             self.quit()
 
         print "Successfully logged in to the Intranet."
-        self.session = session
+        self.session = session  # Store this in a persistent session so the logins are saved
 
     def connect(self):
+        """
+        Attempts to connect to MongoDB using the URI (or URL?) passed, and attempts to authenicate if possible.
+        """
         uri = "mongodb://" + self.db_url
         try:
             self.client = MongoClient(uri)
             self.db = self.client[self.db_name]
             try:
-                self.db.authenticate('ontrac', 'ontrac')
+                self.db.authenticate('ontrac', 'ontrac')  # TODO: add support for this in JSON file
             except Exception:
                 pass
             self.db.students.count()
@@ -143,7 +162,7 @@ class TRMS:
             print "Failed to connect to '" + uri + "'"
             self.quit()
 
-        sleep(1.5)  # nasty
+        sleep(1.5)  # nasty hack to make it seems like something actually happens since the connection is so fast
         print "Successfully connected to Database."
 
     def run(self):

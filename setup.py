@@ -11,7 +11,7 @@ with open(path.join(here, 'DESCRIPTION.rst'), encoding='utf-8') as f:
 
 setup(
     name='trms',
-    version='0.0.8a1',
+    version='0.0.9a1',
 
     description='Third-party Regis Moodle Scraper',
     long_description=long_description,
