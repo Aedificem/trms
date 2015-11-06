@@ -18,13 +18,16 @@ from pymongo import MongoClient
 PATH = "./secrets.json"
 DB_URL = "localhost:27017"
 DB_NAME = "regis"
+SCRAPE_TYPE = None
+START_AT = None
+END_AT = None
 
 
 def usage():
     """
     Prints the usage for the command line.
     """
-    print "usage: trms [--help] [-p <json_path>] [-u <db_url>] [-n <db_name>]"
+    print "usage: trms [--help] [-p <json_path>] [-u <db_url>] [-n <db_name>] [-t <scrape_type>] [-s <start_mID>] [-e <end_mID>]"
 
 
 # CLI ARGUMENTS
@@ -34,7 +37,8 @@ if len(sys.argv) > 10:
     sys.exit(2)
 
 try:
-    opts, args = getopt.getopt(sys.argv[1:], 'p:u:n:h', ['path=', 'dburl=', 'dbname=', 'help'])
+    opts, args = getopt.getopt(sys.argv[1:], 'p:u:n:t:s:e:h',
+                               ['path=', 'dburl=', 'dbname=', 'scrapetype=', 'startmid=', 'endmid=', 'help'])
 except getopt.GetoptError:
     usage()
     sys.exit(2)
@@ -49,18 +53,38 @@ for opt, arg in opts:
         DB_URL = arg
     elif opt in ('-n', '--dbname'):
         DB_NAME = arg
+    elif opt in ('-t', '--scrapetype'):
+        if arg in ['teacher', 'student']:
+            SCRAPE_TYPE = arg
+        else:
+            print "Invalid scrape type. Try 'teacher' or 'student'."
+            sys.exit()
+    elif opt in ('-s', '--startmid'):
+        START_AT = arg
+    elif opt in ('-e', '--endmid'):
+        END_AT = arg
     else:
         usage()
         sys.exit(2)
+
+if None == SCRAPE_TYPE or None == START_AT:
+    print "Not enough required arguments, use trms -h for info."
+    sys.exit()
+
+if None == END_AT:
+    END_AT = START_AT
 
 
 # ---------------------------
 
 class TRMS:
-    def __init__(self, path, db_url, db_name):
+    def __init__(self, path, db_url, db_name, scrape_type, start_mid, end_mid):
         self.path = path
         self.db_url = db_url
         self.db_name = db_name
+        self.scrape_type = scrape_type
+        self.start_mid = start_mid
+        self.end_mid = end_mid
 
         # MongoDB
         self.client = None
@@ -162,15 +186,12 @@ class TRMS:
             print "Failed to connect to '" + uri + "'"
             self.quit()
 
-        sleep(1.5)  # nasty hack to make it seems like something actually happens since the connection is so fast
+        sleep(1)  # nasty hack to make it seems like something actually happens since the connection is so fast
         print "Successfully connected to Database."
 
     def run(self):
         try:
-            while self.running:
-                command = raw_input("trms> ")
-                sleep(0.5)
-                print command
+            print "[scrape " + self.scrape_type + "s with Moodle ID's " + self.start_mid + " to " + self.end_mid + "]"
             self.quit()
         except KeyboardInterrupt:
             print ""
@@ -179,12 +200,11 @@ class TRMS:
     def quit(self):
         if self.client is not None:
             self.client.close()
-
         sys.exit(0)
 
 
 def main():
-    TRMS(PATH, DB_URL, DB_NAME)
+    TRMS(PATH, DB_URL, DB_NAME, SCRAPE_TYPE, START_AT, END_AT)
 
 
 if __name__ == "__main__":
