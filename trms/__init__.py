@@ -15,6 +15,8 @@ import requests
 from lxml import html
 from pymongo import MongoClient
 
+SKIP_LOGINS_AND_CONNECTION = False
+
 PATH = "./secrets.json"
 DB_URL = "localhost:27017"
 DB_NAME = "regis"
@@ -54,28 +56,46 @@ for opt, arg in opts:
     elif opt in ('-n', '--dbname'):
         DB_NAME = arg
     elif opt in ('-t', '--scrapetype'):
-        if arg in ['teacher', 'student']:
+        if arg in ['course', 'person']:
             SCRAPE_TYPE = arg
         else:
-            print "Invalid scrape type. Try 'teacher' or 'student'."
+            print "Invalid scrape type. Try 'person' or 'course'."
             sys.exit()
     elif opt in ('-s', '--startmid'):
-        START_AT = arg
+        try:
+            START_AT = int(arg)
+        except ValueError:
+            print "Please user integers for -s and -e."
+            sys.exit(2)
     elif opt in ('-e', '--endmid'):
-        END_AT = arg
+        try:
+            END_AT = int(arg)
+        except ValueError:
+            print "Please user integers for -s and -e."
+            sys.exit(2)
     else:
         usage()
         sys.exit(2)
 
-if None == SCRAPE_TYPE or None == START_AT:
-    print "Not enough required arguments, use trms -h for info."
-    sys.exit()
+if None == END_AT and None == START_AT:
+    START_AT = 1
+    if SCRAPE_TYPE == "course":
+        END_AT = 600
+    else:
+        END_AT = 2500
+
+if None == START_AT:
+    START_AT = 1
 
 if None == END_AT:
     END_AT = START_AT
 
+if START_AT > END_AT:
+    print "Starting Moodle ID (-s) must be less than ending Moodle ID (-e)."
+    sys.exit(2)
 
 # ---------------------------
+
 
 class TRMS:
     def __init__(self, path, db_url, db_name, scrape_type, start_mid, end_mid):
@@ -94,11 +114,12 @@ class TRMS:
         self.session = None  # Requests session for persistent login
         self.running = True
 
-        print self.path, self.db_url, self.db_name
+        # print self.path, self.db_url, self.db_name
         print " --- Initializing TRMS Alpha 1 --- "
-        self.get_credentials()
-        self.login()
-        self.connect()
+        if not SKIP_LOGINS_AND_CONNECTION:
+            self.get_credentials()
+            self.login()
+            self.connect()
         print ""
         self.run()
 
@@ -191,11 +212,68 @@ class TRMS:
 
     def run(self):
         try:
-            print "[scrape " + self.scrape_type + "s with Moodle ID's " + self.start_mid + " to " + self.end_mid + "]"
+            print "[ scrape", self.scrape_type, "with Moodle ID's", self.start_mid, "to", self.end_mid, "]"
+            for mid in range(self.start_mid, self.end_mid + 1):
+                self.extract(mid)
             self.quit()
         except KeyboardInterrupt:
             print ""
             self.quit()
+
+    def extract(self, mid):
+        base_url = "http://moodle.regis.org/user/profile.php?id="
+        if self.scrape_type == "course":
+            base_url = "http://moodle.regis.org/course/view.php?id="
+
+        # Get the page
+        r = self.session.get(base_url + str(mid))  # The url is created by appending the current ID to the base url
+        # Parse the html returned so we can find the title
+        parsed_body = html.fromstring(r.text)
+
+        # Get the page title
+        title = parsed_body.xpath('//title/text()')
+        # Check if page is useful
+        if len(title) == 0:
+            print "Bad title"
+            return
+        if "Test" in title:
+            print "Skipped test entry"
+            return
+
+        if ("Error" in title[0].strip()) or ("Notice" in title[0].strip()):
+            print "Error or Notice skipped"
+            return
+        title = parsed_body.xpath('//title/text()')[0]
+        parts = title.split(": ")
+
+        page_for = parts[0]
+
+        print mid, title
+
+        if page_for == "Course":
+            if "Advisement " in parts[1]:
+                self.extract_advisement(parsed_body, parts, mid)
+            else:
+                self.extract_course(parsed_body, parts, mid)
+        else:
+            self.extract_person(parsed_body, parts, mid)
+
+    def extract_person(self, body, parts, mid):
+        pass
+
+    def extract_advisement(self, body, parts, mid):
+        name = parts[1]
+        out = {
+            "mID": mid,
+            "title": name.replace("Advisement ", "")
+        }
+        print out
+
+    def extract_course(self, body, parts, mid):
+        name = parts[1]
+        ps = name.split(" ")
+
+        teacher = parts[2] if len(parts) > 2 else "no"
 
     def quit(self):
         if self.client is not None:
