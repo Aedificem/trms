@@ -260,14 +260,14 @@ class TRMS:
             self.remove(mid, parts)
             print "Skipped test entry"
             return
-        if ("Error" in title[0].strip()) or ("Notice" in title[0].strip()):
+        if ("Error" in title.strip()) or ("Notice" in title.strip()):
             self.remove(mid, parts)
             print "Error or Notice skipped"
             return
         name = parts[1]
         print mid, title
 
-        if self.scrape_type == "Course":
+        if self.scrape_type == "course":
             if "Advisement " in parts[1]:
                 self.extract_advisement(parsed_body, parts, mid)
             else:
@@ -415,13 +415,17 @@ class TRMS:
                 len(classes)) + " courses"
             if classes:
                 # Add student's _id to his advisement
-                self.db.advisements.update_one({"mID": classes[0]}, {"$push": {"students": newID}})
+                if newID not in self.db.advisements.find_one({"mID": classes[0]})['students']:
+                    self.db.advisements.update_one({"mID": classes[0]}, {"$push": {"students": newID}})
                 for c in classes:  # C IS A MOODLE ID FOR A COURSE
                     course = collect.find_one({"mID": c})
                     if course:
                         cID = course['_id']
                         courses.append(cID)
-                        collect.update_one({"mID": c}, {"$push": {"students": newID}})
+
+                        # Add student to advisement (IF HE IS NOT ALREADY)
+                        if newID not in self.db.courses.find_one({"mID": c})['students']:
+                            collect.update_one({"mID": c}, {"$push": {"students": newID}})
                 print courses
                 self.db.students.update_one({"_id": newID}, {"$set": {"courses": courses}})
         else:
@@ -451,22 +455,65 @@ class TRMS:
             "mID": mid,
             "title": name.replace("Advisement ", "")
         }
-        print out
+        existing = self.db.advisements.find_one({"mID": mid})
+        newID = None
+        if existing:
+            newID = existing['_id']
+            self.db.advisements.update_one({"mID": mid}, {"$set": out})
+        else:
+            out['students'] = []
+            newID = self.db.advisements.insert_one(out).inserted_id
+
+        print str(mid) + ": Advisement " + out['title'] + " " + str(newID)
 
     def extract_course(self, body, parts, mid):
+        # print "REACHED HERE"
         name = parts[1]
         ps = name.split(" ")
 
         teacher = parts[2] if len(parts) > 2 else "no"
+        grade = 13
+        for pa in ps:
+            for index, g in enumerate(["I", "II", "III", "IV"]):
+                if g == pa:
+                    grade = 9 + index
+            try:
+                grade = int(pa)
+            except ValueError:
+                pass
+        courseType = "class"
+        if "Club" in name or "Society" in name:
+            courseType = "club"
+
+        if "REACH" in name or "Reach" in name:
+            courseType = "reach"
+
+        out = {
+            "mID": mid,
+            "full": ": ".join(parts),
+            "courseType": courseType,
+            "title": name,
+            "grade": grade
+        }
+        existing = self.db.courses.find_one({"mID": mid})
+        newID = None
+        if existing:
+            newID = existing['_id']
+            self.db.courses.update_one({"mID": mid}, {"$set": out})
+        else:
+            out['students'] = []
+            newID = self.db.courses.insert_one(out).inserted_id
+
+        print str(mid) + ": Course " + str(newID)
 
     def remove(self, mid, parts):
         try:
             if self.scrape_type == "course":
-                self.db.course.delete_one({'mID': mid})
-                self.db.advisement.delete_one({'mID': mid})
+                self.db.courses.delete_one({'mID': mid})
+                self.db.advisements.delete_one({'mID': mid})
             else:
-                self.db.student.delete_one({'mID': mid})
-                self.db.teacher.delete_one({'mID': mid})
+                self.db.students.delete_one({'mID': mid})
+                self.db.teachers.delete_one({'mID': mid})
         except:
             pass
 
