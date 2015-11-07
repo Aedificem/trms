@@ -447,6 +447,39 @@ class TRMS:
                 "sclasses": classes,
                 "courses": courses
             }
+            existing = self.db.teachers.find_one({"mID": mid})
+
+            newID = None
+            if existing is not None:
+                print existing['username']
+                newID = existing['_id']
+                self.db.teachers.update_one({"mID": mid}, {"$set": out})
+            else:
+                out['courses'] = []
+                newID = self.db.teachers.insert_one(out).inserted_id
+
+            # print "Teacher " + str(mid) + ": " + str(newID)
+            for c in classes:
+                course = collect.find_one({"mID": c})
+                if course:
+                    if name_parts[0] in course["full"]:
+                        # print "COURSE:", course['title']
+                        collect.update_one({'_mID': c}, {
+                            '$set': {
+                                'teacher': newID
+                            }
+                        }, upsert=False)
+                    if course['_id'] not in self.db.teachers.find_one({"_id": newID})['courses']:
+                        self.db.teachers.update_one({"_id": newID}, {"$push": {"courses": course['_id']}})
+                adv = self.db.advisements.find_one({"mID": c})
+                if adv:
+                    self.db.advisements.update_one({
+                        'mID': c
+                    }, {
+                        '$set': {
+                            'teacher': newID
+                        }
+                    })
             # print out
 
     def extract_advisement(self, body, parts, mid):
