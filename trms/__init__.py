@@ -32,7 +32,7 @@ def usage():
     print "usage: trms [--help] [-p <json_path>] [-u <db_url>] [-n <db_name>] [-t <scrape_type>] [-s <start_mID>] [-e <end_mID>]"
 
 
-# CLI ARGUMENTS
+# ----------- CLI ARGUMENTS -----------
 if len(sys.argv) > 10:
     print('Too many arguments.')
     usage()
@@ -94,7 +94,12 @@ if START_AT > END_AT:
     print "Starting Moodle ID (-s) must be less than ending Moodle ID (-e)."
     sys.exit(2)
 
-# ---------------------------
+if None == SCRAPE_TYPE:
+    print "No scrape type (-t) specified."
+    sys.exit(2)
+
+
+# ----------------------------------------
 
 
 class TRMS:
@@ -216,8 +221,8 @@ class TRMS:
             for mid in range(self.start_mid, self.end_mid + 1):
                 self.extract(mid)
             self.quit()
-        except KeyboardInterrupt:
-            print ""
+        except Exception as e:
+            print e
             self.quit()
 
     def extract(self, mid):
@@ -233,24 +238,36 @@ class TRMS:
         # Get the page title
         title = parsed_body.xpath('//title/text()')
         # Check if page is useful
-        if len(title) == 0:
+
+        # --- POSSIBLE TITLES ---
+        # Matranga, Frank: Public profile
+        # Course: Computer Technology I: Croce
+        # Course: Advisement 2B-1: Bonagura
+        # Notice
+        # Error
+        # (Empty)
+
+        if len(title) == 0:  # Check if page title exists
+            self.remove(mid, [])
             print "Bad title"
             return
-        if "Test" in title:
-            print "Skipped test entry"
-            return
 
-        if ("Error" in title[0].strip()) or ("Notice" in title[0].strip()):
-            print "Error or Notice skipped"
-            return
         title = parsed_body.xpath('//title/text()')[0]
         parts = title.split(": ")
 
-        page_for = parts[0]
-
+        # Make sure its a valid page on some item
+        if "Test" in title:
+            self.remove(mid, parts)
+            print "Skipped test entry"
+            return
+        if ("Error" in title[0].strip()) or ("Notice" in title[0].strip()):
+            self.remove(mid, parts)
+            print "Error or Notice skipped"
+            return
+        name = parts[1]
         print mid, title
 
-        if page_for == "Course":
+        if self.scrape_type == "Course":
             if "Advisement " in parts[1]:
                 self.extract_advisement(parsed_body, parts, mid)
             else:
@@ -259,7 +276,174 @@ class TRMS:
             self.extract_person(parsed_body, parts, mid)
 
     def extract_person(self, body, parts, mid):
-        pass
+        out = {}
+
+        name_parts = body.xpath('//title/text()')[0].split(":")[0].split(", ") if \
+            len(body.xpath('//title/text()')) > 0 else ['Unknown']
+        department = body.xpath('//dl/dd[1]/text()')
+        if len(department) == 0:
+            return
+        else:
+            department = department[0]
+        class_as = body.xpath('//dl/dd[2]/a')
+
+        classes = []
+        for a in class_as:
+            classes.append(int(a.get("href").split("id=")[1]))
+
+        # Test department to get user type
+        f = department[0]
+        try:
+            int(f)  # This would work if it was a student since department would be like '1C-2' so f would be '1'
+            userType = "student"
+        except ValueError:
+            userType = "teacher"
+
+        if department.startswith("REACH"):
+            userType = "other"
+
+        # Place holder profile image
+        picsrc = "/images/person-placeholder.jpg"
+
+        # Get Intranet profile picture
+        for img in body.xpath('//img[@class=\'userpicture\']'):
+            picsrc = img.get("src")
+
+        collect = self.db.courses
+        courses = []  # This will store the _id's of a user's courses
+
+        intranet = self.session.get(
+            "http://intranet.regis.org/infocenter/default.cfm?FuseAction=basicsearch&searchtype=namewildcard&criteria=" +
+            name_parts[0] + "%2C+" + name_parts[1] + "&[whatever]=Search")
+        intrabody = html.fromstring(intranet.text)
+
+        schedule = "<h2>Not Found</h2>"
+
+        if userType == "student":
+            style = "float:left;width:200px;"
+        else:
+            style = "float:left; width:200px;"
+
+        # Get student Advisement
+        if userType == "student":
+            if classes:
+                adv = self.db.advisements.find_one({"mID": classes[0]})
+                if adv:
+                    department = adv['title']
+
+        # Get the list of search results (hopefully just one)
+        search_results = intrabody.xpath('//div[@style="' + style + '"]/span[1]/text()')
+        # print search_results
+        if len(search_results) == 0:
+            print str(mid) + ": Found on Moodle but not the Intranet. Disregarding."
+            return  # should people found only on Moodle be included?
+
+        # print "Intranet found "+str(len(search_results))+" search results for", name_parts
+
+        # Go through Intrant search results for user until the correct one is found
+        for result in search_results:
+            index = search_results.index(result)
+            name_p = result.encode('utf-8').split(", ")
+            intranet_dep = name_p[1].split(" ")[1].replace("(", "").replace(")", "")
+
+            first_name = name_p[1].split(" ")[0]
+            last_name = name_p[0]
+            # print "Attempting to match "+ str([name_parts[0], name_parts[1], department])+" with " + str([last_name, first_name, intranet_dep])
+            if [last_name, first_name] == name_parts:
+                if userType == "student":
+                    if intranet_dep == department:
+                        # print "Yup!"
+                        break
+                else:
+                    # print "Yup!"
+                    break
+                    # print "Nope"
+
+        # Get user email from correct search result
+        email = intrabody.xpath('//div[@style="' + style + '"]/span[2]/a/text()')[index]
+        # print email
+
+        # Get username from email
+        username = str(email).replace("@regis.org", "").lower()
+
+        pic_elm = intrabody.xpath('//div[@style="' + style + '"]/a')[index]
+        # Get user Student ID# from profile picture
+        code = pic_elm.get("href").split("/")[-1].replace(".jpg", "")
+
+        # Student schedule HTML table and teacher HTML table uses very slightly differing style attributes
+        if userType == "student":
+            style = "float:left;width:200px;"
+            scheduleurl = "http://intranet.regis.org/infocenter?StudentCode=" + code
+        else:
+            style = "float:left; width:200px;"
+            scheduleurl = "http://intranet.regis.org/infocenter/default.cfm?StaffCode=" + code
+        # THIS CAN BREAK AT ANY TIME ^^^
+
+        # Request url for user's profile to get the schedule
+        htmlschedulereq = self.session.get(scheduleurl)
+        htmls = html.fromstring(htmlschedulereq.text)
+        if len(htmls.xpath('//div[@id="main"]/table[4]')) > 0:
+            schedule = html.tostring(htmls.xpath('//div[@id="main"]/table[4]')[0])
+
+        if userType == "student":
+            out = {
+                "mID": mid,
+                "firstName": name_parts[1],
+                "lastName": name_parts[0],
+                "username": username,
+                "code": code,
+                "mpicture": picsrc,
+                "ipicture": pic_elm.get("href"),
+                "schedule": schedule,
+                "email": username + "@regis.org",
+                "advisement": department,
+                "sclasses": classes,
+            }
+
+            # Check if this student already exists
+            existing = self.db.students.find_one({'mID': mid})
+            newID = None
+            if existing is not None:
+                if self.db.students.update_one({'mID': mid}, {'$set': out}).modified_count > 0:
+                    print "Updated student."
+                newID = existing['_id']
+            else:
+                newID = self.db.students.insert_one(out).inserted_id
+
+            print str(
+                mid) + ": Student " + username + " in Advisement " + department + " with Student ID " + code + " in " + str(
+                len(classes)) + " courses"
+            if classes:
+                # Add student's _id to his advisement
+                self.db.advisements.update_one({"mID": classes[0]}, {"$push": {"students": newID}})
+                for c in classes:  # C IS A MOODLE ID FOR A COURSE
+                    course = collect.find_one({"mID": c})
+                    if course:
+                        cID = course['_id']
+                        courses.append(cID)
+                        collect.update_one({"mID": c}, {"$push": {"students": newID}})
+                print courses
+                self.db.students.update_one({"_id": newID}, {"$set": {"courses": courses}})
+        else:
+            print str(
+                mid) + ": Staff Member " + username + " of the " + department + " Department with Staff ID " + code + " in " + str(
+                len(classes)) + " courses"
+            out = {
+                "mID": mid,
+                "userType": userType,
+                "image": picsrc,
+                "code": code,
+                "ipicture": pic_elm.get("href"),
+                "department": department,
+                "firstName": name_parts[1],
+                "lastName": name_parts[0],
+                "schedule": schedule,
+                "username": username,
+                "email": email,
+                "sclasses": classes,
+                "courses": courses
+            }
+            # print out
 
     def extract_advisement(self, body, parts, mid):
         name = parts[1]
@@ -274,6 +458,17 @@ class TRMS:
         ps = name.split(" ")
 
         teacher = parts[2] if len(parts) > 2 else "no"
+
+    def remove(self, mid, parts):
+        try:
+            if self.scrape_type == "course":
+                self.db.course.delete_one({'mID': mid})
+                self.db.advisement.delete_one({'mID': mid})
+            else:
+                self.db.student.delete_one({'mID': mid})
+                self.db.teacher.delete_one({'mID': mid})
+        except:
+            pass
 
     def quit(self):
         if self.client is not None:
