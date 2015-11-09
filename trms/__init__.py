@@ -9,6 +9,7 @@ import getopt
 import json
 import os
 import sys
+import traceback
 from time import sleep
 
 import requests
@@ -223,12 +224,15 @@ class TRMS:
             self.quit()
         except Exception as e:
             print e
+            traceback.print_exc()
             self.quit()
 
     def extract(self, mid):
         base_url = "http://moodle.regis.org/user/profile.php?id="
         if self.scrape_type == "course":
             base_url = "http://moodle.regis.org/course/view.php?id="
+            if mid == 1:  # Moodle Course 1 is your homepage
+                return
 
         # Get the page
         r = self.session.get(base_url + str(mid))  # The url is created by appending the current ID to the base url
@@ -264,11 +268,16 @@ class TRMS:
             self.remove(mid, parts)
             print "Error or Notice skipped"
             return
-        name = parts[1]
-        print mid, title
+        try:
+            name = parts[1]
+        except:
+            name = parts[0]
+            # traceback.print_exc()
+
+        # print mid, title
 
         if self.scrape_type == "course":
-            if "Advisement " in parts[1]:
+            if "Advisement " in name:
                 self.extract_advisement(parsed_body, parts, mid)
             else:
                 self.extract_course(parsed_body, parts, mid)
@@ -426,7 +435,7 @@ class TRMS:
                         # Add student to advisement (IF HE IS NOT ALREADY)
                         if newID not in self.db.courses.find_one({"mID": c})['students']:
                             collect.update_one({"mID": c}, {"$push": {"students": newID}})
-                print courses
+                # print courses
                 self.db.students.update_one({"_id": newID}, {"$set": {"courses": courses}})
         else:
             print str(
@@ -464,11 +473,7 @@ class TRMS:
                 if course:
                     if name_parts[0] in course["full"]:
                         # print "COURSE:", course['title']
-                        collect.update_one({'_mID': c}, {
-                            '$set': {
-                                'teacher': newID
-                            }
-                        }, upsert=False)
+                        collect.update_one({'_mID': c}, {'$set': {'teacher': newID}}, upsert=False)
                     if course['_id'] not in self.db.teachers.find_one({"_id": newID})['courses']:
                         self.db.teachers.update_one({"_id": newID}, {"$push": {"courses": course['_id']}})
                 adv = self.db.advisements.find_one({"mID": c})
@@ -480,7 +485,7 @@ class TRMS:
                             'teacher': newID
                         }
                     })
-            # print out
+                    # print out
 
     def extract_advisement(self, body, parts, mid):
         name = parts[1]
@@ -501,7 +506,10 @@ class TRMS:
 
     def extract_course(self, body, parts, mid):
         # print "REACHED HERE"
-        name = parts[1]
+        try:
+            name = parts[1]
+        except IndexError:
+            name = parts[0]
         ps = name.split(" ")
 
         teacher = parts[2] if len(parts) > 2 else "no"
