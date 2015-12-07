@@ -426,15 +426,22 @@ class TRMS:
                 # Add student's _id to his advisement
                 if newID not in self.db.advisements.find_one({"mID": classes[0]})['students']:
                     self.db.advisements.update_one({"mID": classes[0]}, {"$push": {"students": newID}})
+
+                total = len(classes) # Total number of courses
+                matched = 0 # Number of courses Successfully matched
+
                 for c in classes:  # C IS A MOODLE ID FOR A COURSE
                     course = collect.find_one({"mID": c})
                     if course:
                         cID = course['_id']
                         courses.append(cID)
-
+                        matched += 1
                         # Add student to advisement (IF HE IS NOT ALREADY)
                         if newID not in self.db.courses.find_one({"mID": c})['students']:
                             collect.update_one({"mID": c}, {"$push": {"students": newID}})
+
+                if matched != total:
+                    print "WARNING: Failed to match all of this student's courses."
                 # print courses
                 self.db.students.update_one({"_id": newID}, {"$set": {"courses": courses}})
         else:
