@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # ==============================================================================
-#      Frank Matranga's Third-party Regis High School Python Module
+#      Frank Matranga's Third-party Regis High School Moodle Scraper
 # ==============================================================================
 
 import getopt
@@ -34,7 +34,7 @@ def usage():
 
 
 # ----------- CLI ARGUMENTS -----------
-if len(sys.argv) > 10:
+if len(sys.argv) > 14:
     print('Too many arguments.')
     usage()
     sys.exit(2)
@@ -172,7 +172,7 @@ class TRMS:
         title = parsed_body.xpath('//title/text()')[0]
 
         # Check whether login was successful or not
-        if not "My home" in title:
+        if not "Dashboard" in title:
             print "Failed to login to Moodle, check your credentials in '" + self.path + "'."
             self.quit()
         print "Successfully logged into Moodle."
@@ -287,18 +287,23 @@ class TRMS:
     def extract_person(self, body, parts, mid):
         out = {}
 
-        name_parts = body.xpath('//title/text()')[0].split(":")[0].split(", ") if \
+        name_parts = body.xpath('//title/text()')[0].split(":")[0].split(" ")[::-1] if \
             len(body.xpath('//title/text()')) > 0 else ['Unknown']
-        department = body.xpath('//dl/dd[1]/text()')
+        #department = body.xpath('//dl/dd[1]/text()')
+
+        # Advisement (for students) or Department (for staff)
+        department = body.xpath('//dd[../dt = "Department"]/text()')
         if len(department) == 0:
             return
         else:
             department = department[0]
-        class_as = body.xpath('//dl/dd[2]/a')
+
+        # Class list on profile with links to each
+        class_as = body.xpath('//dd[../dt = "Courses"]//a')
 
         classes = []
         for a in class_as:
-            classes.append(int(a.get("href").split("id=")[1]))
+            classes.append(int(a.get("href").split("course=")[1]))
 
         # Test department to get user type
         f = department[0]
@@ -315,7 +320,7 @@ class TRMS:
         picsrc = "/images/person-placeholder.jpg"
 
         # Get Intranet profile picture
-        for img in body.xpath('//img[@class=\'userpicture\']'):
+        for img in body.xpath('//img[@class="userpicture"]'):
             picsrc = img.get("src")
 
         collect = self.db.courses
@@ -411,6 +416,7 @@ class TRMS:
 
             # Check if this student already exists
             existing = self.db.students.find_one({'mID': mid})
+
             newID = None
             if existing is not None:
                 if self.db.students.update_one({'mID': mid}, {'$set': out}).modified_count > 0:
@@ -418,30 +424,35 @@ class TRMS:
                 newID = existing['_id']
             else:
                 newID = self.db.students.insert_one(out).inserted_id
+                print "Added new student."
 
             print str(
                 mid) + ": Student " + username + " in Advisement " + department + " with Student ID " + code + " in " + str(
                 len(classes)) + " courses"
             if classes:
+                total = len(classes) # Total number of courses
+                matched = [] # List of mID's of courses Successfully matched
+
                 # Add student's _id to his advisement
                 if newID not in self.db.advisements.find_one({"mID": classes[0]})['students']:
                     self.db.advisements.update_one({"mID": classes[0]}, {"$push": {"students": newID}})
-
-                total = len(classes) # Total number of courses
-                matched = 0 # Number of courses Successfully matched
+                matched.append(classes[0]) # Advisement
 
                 for c in classes:  # C IS A MOODLE ID FOR A COURSE
                     course = collect.find_one({"mID": c})
                     if course:
+                        print "FOUND "+course['title']
                         cID = course['_id']
                         courses.append(cID)
-                        matched += 1
+                        matched.append(c)
                         # Add student to advisement (IF HE IS NOT ALREADY)
                         if newID not in self.db.courses.find_one({"mID": c})['students']:
                             collect.update_one({"mID": c}, {"$push": {"students": newID}})
 
-                if matched != total:
-                    print "WARNING: Failed to match all of this student's courses."
+                for mID in classes:
+                    if mID not in matched:
+                        print "FAILED TO MATCH COURSE " +str(mID)
+
                 # print courses
                 self.db.students.update_one({"_id": newID}, {"$set": {"courses": courses}})
         else:
