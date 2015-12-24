@@ -235,7 +235,7 @@ class TRMS:
                 return
 
         # Get the page
-        r = self.session.get(base_url + str(mid))  # The url is created by appending the current ID to the base url
+        r = self.session.get(base_url + str(mid)+"&showallcourses=1")  # The url is created by appending the current ID to the base url
         # Parse the html returned so we can find the title
         parsed_body = html.fromstring(r.text)
 
@@ -300,11 +300,12 @@ class TRMS:
 
         # Class list on profile with links to each
         class_as = body.xpath('//dd[../dt = "Courses"]//a')
-
         classes = []
         for a in class_as:
-            classes.append(int(a.get("href").split("course=")[1]))
+            #print a.get("href")
+            classes.append(int(a.get("href").split("course=")[1].replace("&showallcourses=1", "")))
 
+        print "CLASSES: ", classes
         # Test department to get user type
         f = department[0]
         try:
