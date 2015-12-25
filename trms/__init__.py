@@ -305,7 +305,7 @@ class TRMS:
             #print a.get("href")
             classes.append(int(a.get("href").split("course=")[1].replace("&showallcourses=1", "")))
 
-        print "CLASSES: ", classes
+        #print "CLASSES: ", classes
         # Test department to get user type
         f = department[0]
         try:
@@ -442,7 +442,7 @@ class TRMS:
                 for c in classes:  # C IS A MOODLE ID FOR A COURSE
                     course = collect.find_one({"mID": c})
                     if course:
-                        print "FOUND "+course['title']
+                        #print "FOUND "+course['title']
                         cID = course['_id']
                         courses.append(cID)
                         matched.append(c)
@@ -479,7 +479,6 @@ class TRMS:
 
             newID = None
             if existing is not None:
-                print existing['username']
                 newID = existing['_id']
                 self.db.teachers.update_one({"mID": mid}, {"$set": out})
             else:
@@ -488,11 +487,12 @@ class TRMS:
 
             # print "Teacher " + str(mid) + ": " + str(newID)
             for c in classes:
+                print c
                 course = collect.find_one({"mID": c})
                 if course:
+                    print "FOUND"
                     if name_parts[0] in course["full"]:
-                        # print "COURSE:", course['title']
-                        collect.update_one({'_mID': c}, {'$set': {'teacher': newID}}, upsert=False)
+                        db.courses.update_one({'mID': c}, {'$set': {'teacher': newID}})
                     if course['_id'] not in self.db.teachers.find_one({"_id": newID})['courses']:
                         self.db.teachers.update_one({"_id": newID}, {"$push": {"courses": course['_id']}})
                 adv = self.db.advisements.find_one({"mID": c})
