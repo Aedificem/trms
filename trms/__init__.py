@@ -303,7 +303,7 @@ class TRMS:
         classes = []
         for a in class_as:
             #print a.get("href")
-            classes.append(int(a.get("href").split("course=")[1].replace("&showallcourses=1", "")))
+            classes.append(int(a.get("href").split("?id=")[1].replace("&showallcourses=1", "")))
 
         #print "CLASSES: ", classes
         # Test department to get user type
@@ -492,7 +492,7 @@ class TRMS:
                 if course:
                     print "FOUND"
                     if name_parts[0] in course["full"]:
-                        db.courses.update_one({'mID': c}, {'$set': {'teacher': newID}})
+                        collect.update_one({'mID': c}, {'$set': {'teacher': newID}})
                     if course['_id'] not in self.db.teachers.find_one({"_id": newID})['courses']:
                         self.db.teachers.update_one({"_id": newID}, {"$push": {"courses": course['_id']}})
                 adv = self.db.advisements.find_one({"mID": c})
